@@ -2,11 +2,10 @@
 
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
-import { Layers2, LayoutDashboard, LibraryBig, LogOut, PackageOpen, ShieldCheck, ShoppingCart, Star, User } from "lucide-react"
+import { CatIcon, Layers2, LayoutDashboard, LibraryBig, LogOut, PackageOpen, ShieldCheck, ShoppingCart, Star, User } from "lucide-react"
 import { usePathname } from "next/navigation"
-import { signOut } from "firebase/auth"
 import toast from "react-hot-toast"
-import {auth} from '@/lib/firebase'
+import { supabase } from '@/lib/supabaseClient'  // 👈 use your Supabase client
 
 export default function Sidebar() {
   const menuList = [
@@ -24,6 +23,11 @@ export default function Sidebar() {
       name: "Categories",
       link: "/admin/categories",
       icon: <Layers2 className="h-5" />
+    },
+    {
+      name: "Brands",
+      link: "/admin/brands",
+      icon: <CatIcon className="h-5" />
     },
     {
       name: "Orders",
@@ -64,13 +68,12 @@ export default function Sidebar() {
         <Button
           onClick={async ()=>{
             try{
-                await toast.promise(signOut(auth),{
-                    error:(e)=>e?.message,
-                    loading:"Loading...",
-                    success:"Successfully logged out"
-                })
+              const { error } = await supabase.auth.signOut(); // 👈 Supabase sign out
+              if (error) throw error;
+
+              toast.success("Successfully logged out");
             }catch(err){
-                toast.error(err?.message);
+              toast.error(err?.message);
             }
           }}
           variant="ghost"

@@ -8,11 +8,11 @@ const Header = () => {
             link:"/"
         },
         {
-            name:"About Us",
+            name:"AboutUs",
             link:"/about-us"
         },
         {
-            name:"Contact Us",
+            name:"ContactUs",
             link:"contact-us"
         }
     ]

@@ -1,47 +1,40 @@
 'use client'
 
-import AuthContextProvider from '@/contexts/AuthContext'
+import AuthContextProvider, { useAuth } from '@/contexts/AuthContext'
 import AdminLayout from './components/AdminLayout'
-import { useAuth } from '@/contexts/AuthContext'
 import { useRouter } from 'next/navigation'
 import { useEffect } from 'react'
 import { Loader2 } from 'lucide-react'
-const layout = ({children}:any) => {
+
+const Layout = ({ children }: any) => {
   return (
     <AuthContextProvider>
-        <AdminChecking>{children}</AdminChecking>
+      <AdminChecking>{children}</AdminChecking>
     </AuthContextProvider>
   )
 }
 
-function AdminChecking({children}){
-    const {user,isLoading}=useAuth();
-    const router=useRouter();
+function AdminChecking({ children }: any) {
+  const { user, isLoading } = useAuth()
+  const router = useRouter()
 
-    useEffect(()=>{
-        if(!user && !isLoading){
-            router.push("/login")
-        }
-    },[user,isLoading]);
-    if(isLoading){
-        return(
-            <div className='h-screen w-screen flex justify-center items-center'>
-                <Loader2/>
-            </div>
-        )
+  useEffect(() => {
+    if (!isLoading && !user) {
+      router.replace('/login')   // only block non-logged users
     }
+  }, [user, isLoading, router])
 
-    if(!user){
-        return(
-            <div className='h-screen w-screen flex justify-center items-center'>
-                <h1 className='capitalize'>Please login first!</h1>
-            </div>
-        )
+  if (isLoading) {
+    return (
+      <div className="h-screen w-screen flex justify-center items-center">
+        <Loader2 className="animate-spin h-6 w-6" />
+      </div>
+    )
+  }
 
-    }
+  if (!user) return null // prevent flash before redirect
 
-    return <AdminLayout>{children}</AdminLayout>
-
+  return <AdminLayout>{children}</AdminLayout>
 }
 
-export default layout
+export default Layout
