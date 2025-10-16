@@ -4,9 +4,9 @@ import { Button } from '@/components/ui/button';
 import { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import { useSearchParams } from 'next/navigation';
-import { getCategoryById } from '@/lib/firestore/categories/read_server';
+import { getCategoryById } from '@/lib/supabase/categories/read_server';
 import { useRouter } from 'next/navigation';
-import { createNewCategory, updateCategory } from '@/lib/firestore/categories/write';
+import { createNewCategory, updateCategory } from '@/lib/supabase/categories/write';
 
 const Form = () => {
   const [data, setData] = useState({ name: '', slug: '' });
@@ -34,27 +34,41 @@ const Form = () => {
 
   const handleSubmit = async () => {
     setIsLoading(true);
+    
+    console.log('🔵 Starting submission...', {
+      categoryId,
+      hasImage: !!image,
+      data
+    });
+
     try {
       if (categoryId) {
-        await updateCategory({ id: categoryId, image, data });
+        console.log('🟡 Updating category...');
+        const result = await updateCategory({ id: categoryId, image, data });
+        console.log('🟢 Update successful:', result);
         toast.success('Category updated!');
         setData({ name: '', slug: '' });
         setImage(null);
         setPreview(null);
         router.push('/admin/categories');
       } else {
-        await createNewCategory({ image, data });
+        console.log('🟡 Creating category...');
+        const result = await createNewCategory({ image, data });
+        console.log('🟢 Create successful:', result);
         toast.success('Category created!');
         setData({ name: '', slug: '' });
         setImage(null);
         setPreview(null);
+        // Don't redirect - stay on page to see if list updates
+        // router.push('/admin/categories');
       }
     } catch (err) {
+      console.error('🔴 Error:', err);
       toast.error(err.message || 'Something went wrong');
     }
+    
     setIsLoading(false);
   };
-  
 
   return (
     <div className="flex flex-col gap-3 bg-white p-5 rounded-xl w-full md:w-[400px]">
@@ -84,7 +98,10 @@ const Form = () => {
           )}
           <input
             onChange={(e) => {
-              if (e.target.files.length > 0) setImage(e.target.files[0]);
+              if (e.target.files.length > 0) {
+                console.log('📷 Image selected:', e.target.files[0].name);
+                setImage(e.target.files[0]);
+              }
             }}
             id="category-img"
             type="file"

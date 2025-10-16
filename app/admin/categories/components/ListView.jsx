@@ -1,11 +1,11 @@
 'use client'
 
 import { Edit2, Loader2, Trash } from "lucide-react";
-import { useCategories } from "../../../../lib/firestore/categories/read"
+import { useCategories } from "../../../../lib/supabase/categories/read"
 import { Button } from "@/components/ui/button";
 import toast from "react-hot-toast";
 import { useState } from "react";
-import { deleteCategory } from "../../../../lib/firestore/categories/write";
+import { deleteCategory } from "../../../../lib/supabase/categories/write";
 import { useRouter } from "next/navigation";
 const ListView = () => {
   const {data:categories,error,isLoading}=useCategories();

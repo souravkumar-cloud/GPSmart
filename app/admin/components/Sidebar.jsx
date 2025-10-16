@@ -57,8 +57,11 @@ export default function Sidebar() {
   ]
 
   return (
-    <section className="flex flex-col gap-3 items-center bg-white border-r px-5 py-3 overflow-hidden h-screen w-[220px]">
+    <section className="sticky top-0 flex flex-col gap-3 items-center bg-white border-r px-5 py-3 overflow-hidden h-screen w-[220px]">
+      <Link href={'/'} className="hover:cursor-pointer">
       <img className="h-8 mt-2" src="./logo.png" alt="logo" />
+      </Link>
+      
       <ul className="flex-1 h-full overflow-y-auto py-2 flex flex-col gap-3 scrollbar-hide">
         {menuList.map((item, index) => (
           <Tab key={index} item={item} />
