@@ -4,10 +4,11 @@ import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { CatIcon, Layers2, LayoutDashboard, LibraryBig, LogOut, PackageOpen, ShieldCheck, ShoppingCart, Star, User } from "lucide-react"
 import { usePathname } from "next/navigation"
-import toast from "react-hot-toast"
-import { supabase } from '@/lib/supabaseClient'  // 👈 use your Supabase client
+import { useAuth } from '@/contexts/AuthContext'
 
 export default function Sidebar() {
+  const { signOut } = useAuth()
+
   const menuList = [
     {
       name: "Dashboard",
@@ -59,7 +60,7 @@ export default function Sidebar() {
   return (
     <section className="sticky top-0 flex flex-col gap-3 items-center bg-white border-r px-5 py-3 overflow-hidden h-screen w-[220px]">
       <Link href={'/'} className="hover:cursor-pointer">
-      <img className="h-8 mt-2" src="./logo.png" alt="logo" />
+        <img className="h-8 mt-2" src="/logo.png" alt="logo" />
       </Link>
       
       <ul className="flex-1 h-full overflow-y-auto py-2 flex flex-col gap-3 scrollbar-hide">
@@ -69,16 +70,7 @@ export default function Sidebar() {
       </ul>
       <div className="flex justify-center w-full">
         <Button
-          onClick={async ()=>{
-            try{
-              const { error } = await supabase.auth.signOut(); // 👈 Supabase sign out
-              if (error) throw error;
-
-              toast.success("Successfully logged out");
-            }catch(err){
-              toast.error(err?.message);
-            }
-          }}
+          onClick={signOut}
           variant="ghost"
           className="flex gap-2 items-center hover:bg-indigo-100 px-3 py-2 w-full ease-soft-spring transition-all duration-300"
         >

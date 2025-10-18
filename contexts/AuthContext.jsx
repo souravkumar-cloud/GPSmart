@@ -1,12 +1,13 @@
 'use client'
 
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useState, useRef } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useRouter, usePathname } from 'next/navigation'
+import toast from 'react-hot-toast'
 
 const AuthContext = createContext(null)
 
-// ✅ Check if user is admin by querying the admins table
+// Check if user is admin by querying the admins table
 const checkIsAdmin = async (user) => {
   if (!user?.email) return false
   
@@ -22,7 +23,7 @@ const checkIsAdmin = async (user) => {
       return false
     }
     
-    return !!data // Returns true if admin record exists
+    return !!data
   } catch (err) {
     console.error('Error checking admin status:', err)
     return false
@@ -35,34 +36,65 @@ export default function AuthContextProvider({ children }) {
   const [isAdmin, setIsAdmin] = useState(false)
   const router = useRouter()
   const pathname = usePathname()
+  
+  // Use ref to track logout state (doesn't cause re-renders)
+  const isSigningOutRef = useRef(false)
+
+  // Format user data to include photoURL from Supabase
+  const formatUser = (supabaseUser) => {
+    if (!supabaseUser) return null
+    
+    return {
+      ...supabaseUser,
+      photoURL: supabaseUser?.user_metadata?.avatar_url || null,
+    }
+  }
 
   useEffect(() => {
     let isMounted = true
 
     // Get initial session
     const getSession = async () => {
-      const { data } = await supabase.auth.getSession()
-      if (!isMounted) return
-      
-      const currentUser = data.session?.user ?? null
-      setUser(currentUser)
-      
-      // ✅ Check admin status from database
-      const adminStatus = await checkIsAdmin(currentUser)
-      if (!isMounted) return
-      
-      setIsAdmin(adminStatus)
-      setIsLoading(false)
-
-      // ✅ Clean up URL hash after successful auth
-      if (data.session && window.location.hash) {
-        const cleanUrl = window.location.pathname + window.location.search
-        window.history.replaceState(null, '', cleanUrl)
+      try {
+        const { data, error } = await supabase.auth.getSession()
         
-        // ✅ Redirect based on role
-        if (pathname === '/login' || pathname === '/') {
-          const destination = adminStatus ? '/admin' : '/dashboard'
-          router.replace(destination)
+        if (error) {
+          console.error('Session error:', error)
+          if (isMounted) {
+            setUser(null)
+            setIsAdmin(false)
+            setIsLoading(false)
+          }
+          return
+        }
+
+        if (!isMounted) return
+        
+        const currentUser = formatUser(data.session?.user ?? null)
+        setUser(currentUser)
+        
+        const adminStatus = await checkIsAdmin(currentUser)
+        if (!isMounted) return
+        
+        setIsAdmin(adminStatus)
+        setIsLoading(false)
+
+        // Clean up URL hash after successful auth
+        if (data.session && window.location.hash) {
+          const cleanUrl = window.location.pathname + window.location.search
+          window.history.replaceState(null, '', cleanUrl)
+          
+          // Redirect to home page after login
+          if (pathname === '/login') {
+            router.replace('/')
+          }
+        }
+      } catch (err) {
+        console.error('Unexpected error getting session:', err)
+        if (isMounted) {
+          setUser(null)
+          setIsAdmin(false)
+          setIsLoading(false)
         }
       }
     }
@@ -73,41 +105,54 @@ export default function AuthContextProvider({ children }) {
     const { data: listener } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!isMounted) return
       
-      console.log('Auth event:', event) // For debugging
+      console.log('Auth event:', event, 'Signing out:', isSigningOutRef.current)
       
-      const currentUser = session?.user ?? null
-      setUser(currentUser)
+      // CRITICAL: Ignore SIGNED_IN events during logout
+      if (event === 'SIGNED_IN' && isSigningOutRef.current) {
+        console.log('🚫 Ignoring SIGNED_IN event during logout')
+        return
+      }
       
-      // ✅ Check admin status from database
-      const adminStatus = await checkIsAdmin(currentUser)
-      if (!isMounted) return
+      const currentUser = formatUser(session?.user ?? null)
       
-      setIsAdmin(adminStatus)
-      setIsLoading(false)
-
-      // ✅ Handle successful sign in
-      if (event === 'SIGNED_IN') {
-        // Clean up hash from URL
-        if (window.location.hash) {
-          const cleanUrl = window.location.pathname + window.location.search
-          window.history.replaceState(null, '', cleanUrl)
-        }
+      // Only update state if not signing out
+      if (!isSigningOutRef.current) {
+        setUser(currentUser)
         
-        // ✅ Redirect based on role
-        if (pathname === '/login' || pathname === '/') {
-          const destination = adminStatus ? '/admin' : '/dashboard'
-          console.log('Redirecting to:', destination, 'isAdmin:', adminStatus)
-          router.replace(destination)
+        const adminStatus = currentUser ? await checkIsAdmin(currentUser) : false
+        if (!isMounted) return
+        
+        setIsAdmin(adminStatus)
+        setIsLoading(false)
+
+        // Handle successful sign in - redirect to home page
+        if (event === 'SIGNED_IN' && currentUser) {
+          if (window.location.hash) {
+            const cleanUrl = window.location.pathname + window.location.search
+            window.history.replaceState(null, '', cleanUrl)
+          }
+          
+          // Always redirect to home page after login
+          if (pathname === '/login') {
+            console.log('Redirecting to home page')
+            router.replace('/')
+          }
         }
       }
 
-      // ✅ Handle sign out
+      // Handle sign out
       if (event === 'SIGNED_OUT') {
+        console.log('✅ SIGNED_OUT event received')
+        setUser(null)
         setIsAdmin(false)
-        router.replace('/login')
+        isSigningOutRef.current = false
+        
+        if (pathname !== '/login') {
+          router.replace('/login')
+        }
       }
 
-      // ✅ Handle token refresh
+      // Handle token refresh
       if (event === 'TOKEN_REFRESHED') {
         console.log('Token refreshed successfully')
       }
@@ -120,9 +165,59 @@ export default function AuthContextProvider({ children }) {
   }, [router, pathname])
 
   const signOut = async () => {
-    await supabase.auth.signOut()
+    console.log('🚪 Starting logout process...')
+    
+    // Set flag IMMEDIATELY to prevent race conditions
+    isSigningOutRef.current = true
+    
+    // Clear local state first
     setUser(null)
     setIsAdmin(false)
+    
+    try {
+      // IMPORTANT: Use scope 'local' to avoid 403 errors
+      console.log('Attempting local logout...')
+      const { error } = await supabase.auth.signOut({ scope: 'local' })
+      
+      if (error) {
+        console.warn('Logout error (expected if session expired):', error)
+      } else {
+        console.log('✅ Logout successful')
+      }
+      
+    } catch (err) {
+      console.error('Logout exception:', err)
+    }
+    
+    // ALWAYS clear storage manually as backup
+    try {
+      // Clear all Supabase storage keys
+      const keysToRemove = []
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i)
+        if (key && key.startsWith('sb-')) {
+          keysToRemove.push(key)
+        }
+      }
+      keysToRemove.forEach(key => localStorage.removeItem(key))
+      
+      sessionStorage.clear()
+      console.log('✅ Storage cleared')
+    } catch (storageErr) {
+      console.warn('Could not clear storage:', storageErr)
+    }
+    
+    // Show success message
+    toast.success('Logged out successfully')
+    
+    // Force navigation
+    router.replace('/login')
+    
+    // Reset flag after delay
+    setTimeout(() => {
+      isSigningOutRef.current = false
+      console.log('✅ Logout process complete')
+    }, 1000)
   }
 
   return (
