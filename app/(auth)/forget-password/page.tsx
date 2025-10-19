@@ -83,7 +83,8 @@ export default function ForgotPasswordPage() {
             src="/logo.png" 
             alt="Logo"
             onError={(e) => {
-              e.target.style.display = 'none'
+              const target = e.target as HTMLImageElement;
+              target.style.display = 'none'
             }}
           />
         </div>
