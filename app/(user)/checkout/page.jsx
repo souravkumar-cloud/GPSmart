@@ -8,6 +8,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { ArrowLeft, ShoppingBag } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { validateProductStock, processMultipleProductsOrder } from '@/lib/supabase/products/write'
 
 export default function CheckoutPage() {
   const { user } = useAuth()
@@ -64,6 +65,13 @@ export default function CheckoutPage() {
           .single()
 
         if (error) throw error
+
+        // Check if product has stock
+        if (product.stock < 1) {
+          toast.error('This product is out of stock')
+          router.push('/')
+          return
+        }
 
         setProductList([
           {
@@ -164,6 +172,35 @@ export default function CheckoutPage() {
     try {
       const totalAmount = calculateTotal()
 
+      // Step 1: Validate stock availability
+      console.log('🔍 Validating stock for products:', productList);
+      
+      const orderItems = productList.map((item) => ({
+        productId: item.id,
+        quantity: item.quantity,
+        price: item.price,
+      }))
+
+      const stockValidation = await validateProductStock(orderItems)
+      
+      if (!stockValidation.valid) {
+        const insufficientItems = stockValidation.items
+          .filter(item => !item.sufficient)
+          .map(item => `${item.productName}: Need ${item.requested}, Available ${item.available}`)
+          .join('\n')
+        
+        toast.error(`Insufficient stock:\n${insufficientItems}`, { duration: 5000 })
+        
+        // Redirect to cart to update quantities
+        if (type !== 'buynow') {
+          router.push('/cart')
+        }
+        return
+      }
+
+      console.log('✅ Stock validation passed');
+
+      // Step 2: Create the order
       const { data: order, error: orderError } = await supabase
         .from('orders')
         .insert([
@@ -181,8 +218,10 @@ export default function CheckoutPage() {
 
       if (orderError) throw orderError
 
-      // Store order items in order_items table
-      const orderItems = productList.map((item) => ({
+      console.log('✅ Order created:', order.id);
+
+      // Step 3: Store order items in order_items table
+      const orderItemsData = productList.map((item) => ({
         order_id: order.id,
         product_id: item.id,
         quantity: item.quantity,
@@ -191,18 +230,44 @@ export default function CheckoutPage() {
 
       const { error: itemsError } = await supabase
         .from('order_items')
-        .insert(orderItems)
+        .insert(orderItemsData)
 
-      if (itemsError) throw itemsError
+      if (itemsError) {
+        // Rollback: Delete the order if items creation fails
+        await supabase.from('orders').delete().eq('id', order.id)
+        throw new Error('Failed to create order items: ' + itemsError.message)
+      }
 
+      console.log('✅ Order items created');
+
+      // Step 4: Process stock and orders count (decrease stock, increase orders)
+      try {
+        const productResults = await processMultipleProductsOrder(orderItems)
+        
+        if (productResults.failed.length > 0) {
+          console.warn('⚠️ Some products failed to update stock:', productResults.failed)
+          // Note: Order is still successful, but log the issue
+        }
+        
+        console.log(`✅ Stock updated for ${productResults.success.length} products`);
+      } catch (stockError) {
+        console.error('❌ Failed to update stock:', stockError)
+        // Order is created successfully, but stock update failed
+        // You might want to add this to a queue for manual review
+      }
+
+      // Step 5: Clear cart if this was a cart checkout (not buy now)
       if (type !== 'buynow') {
         const { error: clearCartError } = await supabase
           .from('cart')
           .delete()
           .eq('user_id', user.id)
 
-        if (clearCartError) throw clearCartError
+        if (clearCartError) {
+          console.warn('Failed to clear cart:', clearCartError)
+        }
 
+        // Dispatch cart update event
         if (typeof window !== 'undefined') {
           window.dispatchEvent(
             new CustomEvent('cartUpdate', {
@@ -212,7 +277,7 @@ export default function CheckoutPage() {
         }
       }
 
-      toast.success('Order placed successfully!')
+      toast.success('Order placed successfully! 🎉')
       router.push(`/checkout/success?orderId=${order.id}`)
     } catch (error) {
       console.error('Error placing order:', error)

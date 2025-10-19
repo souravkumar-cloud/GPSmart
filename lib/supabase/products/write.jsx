@@ -203,6 +203,7 @@ export async function deleteProduct(id) {
 
 /**
  * Increment the orders count for a product
+ * @deprecated Use processProductOrder instead for proper stock management
  */
 export async function incrementProductOrders(productId, quantity = 1) {
   try {
@@ -238,5 +239,204 @@ export async function incrementProductOrders(productId, quantity = 1) {
   } catch (err) {
     console.error('Increment product orders failed:', err);
     throw new Error('Increment product orders failed: ' + err.message);
+  }
+}
+
+/**
+ * Process an order - decrease stock and increment orders count
+ * @param {string} productId - The product ID
+ * @param {number} quantity - The quantity ordered (default: 1)
+ * @returns {Promise<Object>} Updated product data
+ */
+export async function processProductOrder(productId, quantity = 1) {
+  try {
+    if (!productId) {
+      throw new Error('Product ID is required');
+    }
+
+    if (quantity <= 0) {
+      throw new Error('Quantity must be greater than 0');
+    }
+
+    // First, get the current product data
+    const { data: product, error: fetchError } = await supabase
+      .from('products')
+      .select('stock, orders, name')
+      .eq('id', productId)
+      .single();
+
+    if (fetchError) {
+      console.error('Error fetching product:', fetchError);
+      throw new Error('Failed to fetch product: ' + fetchError.message);
+    }
+
+    if (!product) {
+      throw new Error('Product not found');
+    }
+
+    const currentStock = product.stock || 0;
+    const currentOrders = product.orders || 0;
+
+    // Check if there's enough stock
+    if (currentStock < quantity) {
+      throw new Error(`Insufficient stock. Available: ${currentStock}, Requested: ${quantity}`);
+    }
+
+    // Calculate new values
+    const newStock = currentStock - quantity;
+    const newOrders = currentOrders + quantity;
+
+    // Update the product
+    const { data: updatedProduct, error: updateError } = await supabase
+      .from('products')
+      .update({ 
+        stock: newStock,
+        orders: newOrders
+      })
+      .eq('id', productId)
+      .select();
+
+    if (updateError) {
+      console.error('Error updating product:', updateError);
+      throw new Error('Failed to update product: ' + updateError.message);
+    }
+
+    console.log(`✅ Order processed for "${product.name}"`);
+    console.log(`   Stock: ${currentStock} → ${newStock}`);
+    console.log(`   Orders: ${currentOrders} → ${newOrders}`);
+
+    // Revalidate pages
+    revalidatePath('/admin/products');
+    revalidatePath('/products');
+    revalidatePath(`/products/${productId}`);
+
+    return {
+      success: true,
+      product: updatedProduct?.[0],
+      previousStock: currentStock,
+      newStock: newStock,
+      previousOrders: currentOrders,
+      newOrders: newOrders
+    };
+
+  } catch (err) {
+    console.error('Process product order failed:', err);
+    throw err;
+  }
+}
+
+/**
+ * Process multiple products in a single order
+ * @param {Array<{productId: string, quantity: number}>} orderItems - Array of order items
+ * @returns {Promise<Object>} Results of processing
+ */
+export async function processMultipleProductsOrder(orderItems) {
+  try {
+    if (!Array.isArray(orderItems) || orderItems.length === 0) {
+      throw new Error('Order items array is required');
+    }
+
+    const results = {
+      success: [],
+      failed: []
+    };
+
+    // Process each item
+    for (const item of orderItems) {
+      try {
+        const result = await processProductOrder(item.productId, item.quantity);
+        results.success.push({
+          productId: item.productId,
+          quantity: item.quantity,
+          result
+        });
+      } catch (error) {
+        console.error(`Failed to process item ${item.productId}:`, error);
+        results.failed.push({
+          productId: item.productId,
+          quantity: item.quantity,
+          error: error.message
+        });
+      }
+    }
+
+    console.log(`📦 Order processing complete:`);
+    console.log(`   ✅ Successful: ${results.success.length}`);
+    console.log(`   ❌ Failed: ${results.failed.length}`);
+
+    // Revalidate pages
+    revalidatePath('/admin/products');
+    revalidatePath('/products');
+
+    return results;
+
+  } catch (err) {
+    console.error('Process multiple products order failed:', err);
+    throw err;
+  }
+}
+
+/**
+ * Check if products have sufficient stock
+ * @param {Array<{productId: string, quantity: number}>} orderItems - Array of order items
+ * @returns {Promise<Object>} Stock validation results
+ */
+export async function validateProductStock(orderItems) {
+  try {
+    if (!Array.isArray(orderItems) || orderItems.length === 0) {
+      throw new Error('Order items array is required');
+    }
+
+    const productIds = orderItems.map(item => item.productId);
+
+    // Fetch all products at once
+    const { data: products, error } = await supabase
+      .from('products')
+      .select('id, name, stock')
+      .in('id', productIds);
+
+    if (error) {
+      throw new Error('Failed to validate stock: ' + error.message);
+    }
+
+    const validation = {
+      valid: true,
+      items: []
+    };
+
+    // Check each item
+    for (const item of orderItems) {
+      const product = products.find(p => p.id === item.productId);
+      
+      if (!product) {
+        validation.valid = false;
+        validation.items.push({
+          productId: item.productId,
+          requested: item.quantity,
+          available: 0,
+          sufficient: false,
+          error: 'Product not found'
+        });
+      } else {
+        const sufficient = product.stock >= item.quantity;
+        if (!sufficient) {
+          validation.valid = false;
+        }
+        
+        validation.items.push({
+          productId: item.productId,
+          productName: product.name,
+          requested: item.quantity,
+          available: product.stock,
+          sufficient: sufficient
+        });
+      }
+    }
+
+    return validation;
+
+  } catch (err) {
+    console.error('Validate product stock failed:', err);
+    throw err;
   }
 }
