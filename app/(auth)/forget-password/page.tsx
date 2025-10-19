@@ -68,10 +68,16 @@ export default function ForgotPasswordPage() {
         setEmailSent(true);
         setEmail("");
       }
-    } catch (error: any) {
-  console.error("Password reset error:", error);
-  toast.error(error?.message || "Failed to send reset link. Please try again.");
-}
+    } catch (error: unknown) {
+      console.error("Password reset error:", error);
+      const errorMessage = 
+        error instanceof Error 
+          ? error.message 
+          : "Failed to send reset link. Please try again.";
+      toast.error(errorMessage);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -82,16 +88,15 @@ export default function ForgotPasswordPage() {
             className="h-12" 
             src="/logo.png" 
             alt="Logo"
-            onError={(e) => {
-              const target = e.target as HTMLImageElement;
-              target.style.display = 'none'
+            onError={(e: React.SyntheticEvent<HTMLImageElement>) => {
+              e.currentTarget.style.display = 'none'
             }}
           />
         </div>
         <div className="flex flex-col gap-3 bg-white md:p-10 p-5 rounded-xl md:min-w-[440px] w-full">
           <h1 className="font-bold text-xl">Forgot Password</h1>
           <p className="text-sm text-gray-600">
-            Enter your email address and we'll send you a link to reset your password.
+            Enter your email address and we&apos;ll send you a link to reset your password.
           </p>
 
           {emailSent ? (
@@ -105,7 +110,7 @@ export default function ForgotPasswordPage() {
                 </p>
               </div>
               <div className="flex flex-col gap-2 text-sm text-gray-600">
-                <p>Didn't receive the email?</p>
+                <p>Didn&apos;t receive the email?</p>
                 <ul className="list-disc list-inside space-y-1 ml-2">
                   <li>Check your spam/junk folder</li>
                   <li>Make sure you entered the correct email</li>

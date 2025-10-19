@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import Link from 'next/link'
 import { 
@@ -17,10 +17,8 @@ import {
   Eye,
   Calendar
 } from 'lucide-react'
-import { useRouter } from 'next/navigation'
 
 export default function AdminDashboard() {
-  const router = useRouter()
   const [loading, setLoading] = useState(true)
   const [stats, setStats] = useState({
     totalRevenue: 0,
@@ -36,47 +34,8 @@ export default function AdminDashboard() {
   const [topProducts, setTopProducts] = useState([])
   const [ordersByStatus, setOrdersByStatus] = useState([])
 
-  useEffect(() => {
-    fetchDashboardData()
-  }, [])
-
-  const fetchDashboardData = async () => {
+  const fetchOrdersStats = useCallback(async () => {
     try {
-      setLoading(true)
-
-      // Fetch all stats in parallel
-      const [
-        ordersData,
-        productsData,
-        usersData,
-        recentOrdersData,
-        topProductsData
-      ] = await Promise.all([
-        fetchOrdersStats(),
-        fetchProductsStats(),
-        fetchUsersStats(),
-        fetchRecentOrders(),
-        fetchTopProducts()
-      ])
-
-      setStats({
-        ...ordersData,
-        ...productsData,
-        ...usersData
-      })
-
-      setRecentOrders(recentOrdersData)
-      setTopProducts(topProductsData)
-    } catch (error) {
-      console.error('Error fetching dashboard data:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const fetchOrdersStats = async () => {
-    try {
-      // Total orders and revenue
       const { data: allOrders, error: ordersError } = await supabase
         .from('orders')
         .select('total_amount, created_at, status')
@@ -86,16 +45,13 @@ export default function AdminDashboard() {
       const totalRevenue = allOrders?.reduce((sum, order) => sum + (order.total_amount || 0), 0) || 0
       const totalOrders = allOrders?.length || 0
 
-      // Today's orders
       const today = new Date()
       today.setHours(0, 0, 0, 0)
       const todayOrders = allOrders?.filter(order => new Date(order.created_at) >= today) || []
       const todayRevenue = todayOrders.reduce((sum, order) => sum + (order.total_amount || 0), 0)
 
-      // Pending orders
       const pendingOrders = allOrders?.filter(order => order.status === 'pending').length || 0
 
-      // Orders by status for chart
       const statusCounts = allOrders?.reduce((acc, order) => {
         const status = order.status || 'pending'
         acc[status] = (acc[status] || 0) + 1
@@ -124,9 +80,9 @@ export default function AdminDashboard() {
         pendingOrders: 0
       }
     }
-  }
+  }, [])
 
-  const fetchProductsStats = async () => {
+  const fetchProductsStats = useCallback(async () => {
     try {
       const { data: products, error } = await supabase
         .from('products')
@@ -142,9 +98,9 @@ export default function AdminDashboard() {
       console.error('Error fetching products stats:', error)
       return { totalProducts: 0, lowStockProducts: 0 }
     }
-  }
+  }, [])
 
-  const fetchUsersStats = async () => {
+  const fetchUsersStats = useCallback(async () => {
     try {
       const { count, error } = await supabase
         .from('users')
@@ -157,9 +113,9 @@ export default function AdminDashboard() {
       console.error('Error fetching users stats:', error)
       return { totalUsers: 0 }
     }
-  }
+  }, [])
 
-  const fetchRecentOrders = async () => {
+  const fetchRecentOrders = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from('orders')
@@ -180,9 +136,9 @@ export default function AdminDashboard() {
       console.error('Error fetching recent orders:', error)
       return []
     }
-  }
+  }, [])
 
-  const fetchTopProducts = async () => {
+  const fetchTopProducts = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from('products')
@@ -197,7 +153,44 @@ export default function AdminDashboard() {
       console.error('Error fetching top products:', error)
       return []
     }
-  }
+  }, [])
+
+  const fetchDashboardData = useCallback(async () => {
+    try {
+      setLoading(true)
+
+      const [
+        ordersData,
+        productsData,
+        usersData,
+        recentOrdersData,
+        topProductsData
+      ] = await Promise.all([
+        fetchOrdersStats(),
+        fetchProductsStats(),
+        fetchUsersStats(),
+        fetchRecentOrders(),
+        fetchTopProducts()
+      ])
+
+      setStats({
+        ...ordersData,
+        ...productsData,
+        ...usersData
+      })
+
+      setRecentOrders(recentOrdersData)
+      setTopProducts(topProductsData)
+    } catch (error) {
+      console.error('Error fetching dashboard data:', error)
+    } finally {
+      setLoading(false)
+    }
+  }, [fetchOrdersStats, fetchProductsStats, fetchUsersStats, fetchRecentOrders, fetchTopProducts])
+
+  useEffect(() => {
+    fetchDashboardData()
+  }, [fetchDashboardData])
 
   if (loading) {
     return (
@@ -213,15 +206,12 @@ export default function AdminDashboard() {
   return (
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-7xl mx-auto">
-        {/* Header */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900 mb-2">Dashboard</h1>
-          <p className="text-gray-600">Welcome back! Here's what's happening with your store.</p>
+          <p className="text-gray-600">Welcome back! Here&apos;s what&apos;s happening with your store.</p>
         </div>
 
-        {/* Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          {/* Total Revenue */}
           <StatCard
             title="Total Revenue"
             value={`₹${stats.totalRevenue.toLocaleString()}`}
@@ -231,7 +221,6 @@ export default function AdminDashboard() {
             bgColor="bg-green-50"
           />
 
-          {/* Total Orders */}
           <StatCard
             title="Total Orders"
             value={stats.totalOrders}
@@ -241,7 +230,6 @@ export default function AdminDashboard() {
             bgColor="bg-blue-50"
           />
 
-          {/* Total Products */}
           <StatCard
             title="Total Products"
             value={stats.totalProducts}
@@ -250,7 +238,6 @@ export default function AdminDashboard() {
             bgColor="bg-purple-50"
           />
 
-          {/* Total Users */}
           <StatCard
             title="Total Users"
             value={stats.totalUsers}
@@ -261,11 +248,10 @@ export default function AdminDashboard() {
           />
         </div>
 
-        {/* Today's Stats */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl shadow-lg p-6 text-white">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold opacity-90">Today's Revenue</h3>
+              <h3 className="text-lg font-semibold opacity-90">Today&apos;s Revenue</h3>
               <Calendar size={24} className="opacity-80" />
             </div>
             <p className="text-3xl font-bold mb-2">₹{stats.todayRevenue.toLocaleString()}</p>
@@ -300,7 +286,6 @@ export default function AdminDashboard() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-          {/* Recent Orders */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-xl font-bold text-gray-900">Recent Orders</h2>
@@ -340,7 +325,6 @@ export default function AdminDashboard() {
             </div>
           </div>
 
-          {/* Top Products */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-xl font-bold text-gray-900">Top Products</h2>
@@ -378,7 +362,6 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* Orders by Status */}
         {ordersByStatus.length > 0 && (
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
             <h2 className="text-xl font-bold text-gray-900 mb-6">Orders by Status</h2>
@@ -394,7 +377,6 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* Quick Actions */}
         <div className="mt-8 grid grid-cols-1 md:grid-cols-4 gap-4">
           <Link href="/admin/products/form">
             <button className="w-full p-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-md hover:shadow-lg transition-all font-semibold">
@@ -477,4 +459,3 @@ function StatusIcon({ status }) {
   }
 
   return icons[status?.toLowerCase()] || icons.pending
-}
