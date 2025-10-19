@@ -42,13 +42,17 @@ export default function AdminDashboard() {
 
       if (ordersError) throw ordersError
 
-      const totalRevenue = allOrders?.reduce((sum, order) => sum + (order.total_amount || 0), 0) || 0
+      // Only count non-cancelled orders for total revenue
+      const activeOrders = allOrders?.filter(order => order.status !== 'cancelled') || []
+      const totalRevenue = activeOrders.reduce((sum, order) => sum + (order.total_amount || 0), 0)
       const totalOrders = allOrders?.length || 0
 
       const today = new Date()
       today.setHours(0, 0, 0, 0)
       const todayOrders = allOrders?.filter(order => new Date(order.created_at) >= today) || []
-      const todayRevenue = todayOrders.reduce((sum, order) => sum + (order.total_amount || 0), 0)
+      // Only count today's non-cancelled orders for today's revenue
+      const todayActiveOrders = todayOrders.filter(order => order.status !== 'cancelled')
+      const todayRevenue = todayActiveOrders.reduce((sum, order) => sum + (order.total_amount || 0), 0)
 
       const pendingOrders = allOrders?.filter(order => order.status === 'pending').length || 0
 

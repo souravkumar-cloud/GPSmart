@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import { useEffect } from 'react'
 import { Loader2 } from 'lucide-react'
 
-const Layout = ({ children }: { children: React.ReactNode }) => {
+const Layout = ({ children }) => {
   return (
     <AuthContextProvider>
       <AdminChecking>{children}</AdminChecking>
@@ -14,17 +14,15 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
   )
 }
 
-function AdminChecking({ children }:{ children: React.ReactNode }) {
+function AdminChecking({ children }) {
   const { user, isLoading, isAdmin } = useAuth()
   const router = useRouter()
 
   useEffect(() => {
     if (!isLoading) {
       if (!user) {
-        // Not logged in - redirect to login
         router.replace('/login')
       } else if (!isAdmin) {
-        // Logged in but not admin - redirect to dashboard
         router.replace('/dashboard')
       }
     }
@@ -38,7 +36,6 @@ function AdminChecking({ children }:{ children: React.ReactNode }) {
     )
   }
 
-  // Prevent flash before redirect
   if (!user || !isAdmin) return null
 
   return <AdminLayout>{children}</AdminLayout>

@@ -68,7 +68,7 @@ export default function ForgotPasswordPage() {
         setEmailSent(true);
         setEmail("");
       }
-    } catch (error: unknown) {
+    } catch (error) {
       console.error("Password reset error:", error);
       const errorMessage = 
         error instanceof Error 
@@ -88,7 +88,7 @@ export default function ForgotPasswordPage() {
             className="h-12" 
             src="/logo.png" 
             alt="Logo"
-            onError={(e: React.SyntheticEvent<HTMLImageElement>) => {
+            onError={(e) => {
               e.currentTarget.style.display = 'none'
             }}
           />

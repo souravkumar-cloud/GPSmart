@@ -4,6 +4,82 @@ import { supabase } from '@/lib/supabaseClient'
 import { processMultipleProductsOrder, validateProductStock } from '@/lib/supabase/products/write'
 
 /**
+ * Send status update email to customer
+ * @param {string} orderId - Order ID
+ * @param {string} userEmail - Customer email
+ * @param {string} status - Order status
+ * @param {Object} orderData - Order details
+ * @returns {Promise<boolean>} Success status
+ */
+const sendStatusUpdateEmail = async (orderId, userEmail, status, orderData) => {
+  try {
+    console.log('📧 Attempting to send email:', { 
+      orderId, 
+      userEmail, 
+      status,
+      hasOrderData: !!orderData 
+    })
+    
+    const requestBody = {
+      orderId,
+      userEmail,
+      status,
+      orderData,
+    }
+    
+    console.log('📧 Request body:', JSON.stringify(requestBody, null, 2))
+    
+    const response = await fetch('/api/emails/send-order-status', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(requestBody),
+    })
+
+    console.log('📧 Response status:', response.status, response.statusText)
+    
+    const responseText = await response.text()
+    console.log('📧 Response text:', responseText)
+    
+    let responseData
+    
+    try {
+      responseData = JSON.parse(responseText)
+    } catch (parseError) {
+      console.error('❌ Failed to parse response:', parseError)
+      responseData = { raw: responseText, parseError: parseError.message }
+    }
+    
+    if (!response.ok) {
+      console.error('❌ Failed to send status email:', {
+        httpStatus: response.status,
+        httpStatusText: response.statusText,
+        responseBody: responseData,
+        orderId,
+        userEmail,
+        requestedStatus: status
+      })
+      return false
+    }
+
+    console.log(`✅ Status update email sent successfully`)
+    console.log('✅ Email details:', { userEmail, status, responseData })
+    return true
+  } catch (error) {
+    console.error('❌ Exception in sendStatusUpdateEmail:', {
+      errorMessage: error.message,
+      errorName: error.name,
+      errorStack: error.stack,
+      orderId,
+      userEmail,
+      status
+    })
+    return false
+  }
+}
+
+/**
  * Update order status
  * @param {string} id - Order ID
  * @param {string} status - New status value
@@ -11,6 +87,21 @@ import { processMultipleProductsOrder, validateProductStock } from '@/lib/supaba
  */
 export const updateOrderStatus = async ({ id, status }) => {
   try {
+    // Fetch current order details before updating
+    const { data: currentOrder, error: fetchError } = await supabase
+      .from('orders')
+      .select('*')
+      .eq('id', id)
+      .single()
+
+    if (fetchError) throw fetchError
+
+    // Get user email from order data
+    const userEmail = currentOrder?.email || currentOrder?.customer_email || null
+    
+    console.log('📧 User email found:', userEmail)
+
+    // Update order status
     const { data, error } = await supabase
       .from('orders')
       .update({
@@ -22,6 +113,13 @@ export const updateOrderStatus = async ({ id, status }) => {
       .single()
 
     if (error) throw error
+
+    // Send status update email to customer on any status change
+    if (userEmail) {
+      await sendStatusUpdateEmail(id, userEmail, status, currentOrder)
+    } else {
+      console.warn('⚠️ No email found for order:', id)
+    }
 
     return { data, error: null }
   } catch (error) {
@@ -98,16 +196,22 @@ export const createOrder = async (orderData, orderItems = []) => {
         
         if (productResults.failed.length > 0) {
           console.warn('⚠️ Some products failed to update:', productResults.failed);
-          // Note: We don't rollback here as the order is already created
-          // You might want to handle this differently based on your business logic
         }
         
         console.log(`✅ Stock updated for ${productResults.success.length} products`);
       } catch (stockError) {
         console.error('❌ Failed to update stock:', stockError);
-        // Order is created but stock update failed
-        // You might want to add this to a queue for retry or manual review
       }
+    }
+
+    // Step 5: Send order confirmation email
+    const userEmail = newOrder?.email || newOrder?.customer_email || orderData?.email || null;
+    
+    if (userEmail) {
+      console.log('📧 Sending order confirmation email to:', userEmail);
+      await sendOrderConfirmationEmail(newOrder.id, userEmail, newOrder, orderItems);
+    } else {
+      console.warn('⚠️ No email found for new order:', newOrder.id);
     }
 
     return { data: newOrder, error: null };
@@ -176,7 +280,21 @@ export const deleteOrder = async ({ id }) => {
  */
 export const cancelOrder = async ({ id, userId, restoreStock = true }) => {
   try {
-    // First get the order items if we need to restore stock
+    // First get the order with user_id
+    const { data: order, error: orderFetchError } = await supabase
+      .from('orders')
+      .select('*')
+      .eq('id', id)
+      .single()
+
+    if (orderFetchError) throw orderFetchError
+
+    // Get user email from order data if available
+    let userEmail = order?.customer_email || order?.email || null
+    
+    console.log('📧 User email for cancellation:', userEmail)
+
+    // Then get order items if we need to restore stock
     if (restoreStock) {
       const { data: orderItems, error: itemsError } = await supabase
         .from('order_items')
@@ -189,7 +307,6 @@ export const cancelOrder = async ({ id, userId, restoreStock = true }) => {
       if (orderItems && orderItems.length > 0) {
         for (const item of orderItems) {
           try {
-            // Get current product data
             const { data: product, error: fetchError } = await supabase
               .from('products')
               .select('stock, orders')
@@ -201,7 +318,6 @@ export const cancelOrder = async ({ id, userId, restoreStock = true }) => {
               continue;
             }
 
-            // Restore stock and decrease orders count
             const newStock = (product.stock || 0) + item.quantity;
             const newOrders = Math.max(0, (product.orders || 0) - item.quantity);
 
@@ -233,11 +349,18 @@ export const cancelOrder = async ({ id, userId, restoreStock = true }) => {
         updated_at: new Date().toISOString(),
       })
       .eq('id', id)
-      .eq('user_id', userId) // Security: ensure user owns the order
+      .eq('user_id', userId)
       .select()
       .single()
 
     if (error) throw error
+
+    // Send cancellation email
+    if (userEmail) {
+      await sendStatusUpdateEmail(id, userEmail, 'cancelled', order)
+    } else {
+      console.warn('⚠️ No email found for cancelled order:', id)
+    }
 
     return { data, error: null }
   } catch (error) {
