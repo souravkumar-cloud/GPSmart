@@ -68,12 +68,10 @@ export default function ForgotPasswordPage() {
         setEmailSent(true);
         setEmail("");
       }
-    } catch (error) {
-      console.error("Password reset error:", error);
-      toast.error(error?.message || "Failed to send reset link. Please try again.");
-    } finally {
-      setIsLoading(false);
-    }
+    } catch (error: any) {
+  console.error("Password reset error:", error);
+  toast.error(error?.message || "Failed to send reset link. Please try again.");
+}
   };
 
   return (
