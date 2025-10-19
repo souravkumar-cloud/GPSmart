@@ -14,7 +14,7 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
   )
 }
 
-function AdminChecking({ children }) {
+function AdminChecking({ children }:{ children: React.ReactNode }) {
   const { user, isLoading, isAdmin } = useAuth()
   const router = useRouter()
 
