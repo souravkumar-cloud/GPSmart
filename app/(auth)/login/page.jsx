@@ -9,29 +9,33 @@ import { Button } from '@/components/ui/button'
 import Link from 'next/link'
 
 export default function LoginPage() {
-  const { user, isLoading, isAdmin } = useAuth()
+  const { user, isLoading } = useAuth()
   const router = useRouter()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loadingBtn, setLoadingBtn] = useState(false)
 
-  // Redirect logged-in users
+  // Debug: Log auth state changes
   useEffect(() => {
-    if (!isLoading && user) {
-      router.push('/') // Redirect to home instead of account
+    console.log('🔍 Login Page - User:', user ? 'Logged in' : 'Not logged in', 'Loading:', isLoading)
+  }, [user, isLoading])
+
+  // Simple redirect - only when we're sure user is logged in
+  useEffect(() => {
+    if (user && !isLoading) {
+      console.log('✅ User detected, redirecting to home...')
+      router.replace('/')
     }
   }, [user, isLoading, router])
 
   const handleEmailLogin = async (e) => {
     e.preventDefault()
     
-    // Basic validation
     if (!email.trim() || !password.trim()) {
       toast.error('Please enter both email and password')
       return
     }
 
-    // Email validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
     if (!emailRegex.test(email)) {
       toast.error('Please enter a valid email address')
@@ -39,16 +43,18 @@ export default function LoginPage() {
     }
 
     setLoadingBtn(true)
+    console.log('🔐 Attempting login...')
     
     try {
-      // Supabase Auth handles password validation automatically
       const { data, error } = await supabase.auth.signInWithPassword({ 
         email: email.trim(), 
         password 
       })
       
+      console.log('📊 Login response:', { data, error })
+      
       if (error) {
-        // Handle specific error cases
+        console.error('❌ Login error:', error)
         if (error.message.includes('Invalid login credentials')) {
           toast.error('Invalid email or password')
         } else if (error.message.includes('Email not confirmed')) {
@@ -56,37 +62,33 @@ export default function LoginPage() {
         } else {
           toast.error(error.message)
         }
+        setLoadingBtn(false)
         return
       }
 
       if (data?.user) {
-        // Optional: Fetch additional user data from your users table
-        const { data: userData, error: userError } = await supabase
-          .from('users')
-          .select('*')
-          .eq('id', data.user.id)
-          .single()
-
-        if (userError && userError.code !== 'PGRST116') {
-          console.error('Error fetching user data:', userError)
-        }
-
+        console.log('✅ Login successful, user:', data.user.email)
+        console.log('⏳ Waiting for auth state to update...')
         toast.success('Logged in successfully!')
-        
-        // Redirect will be handled by useEffect
+        // Auth context will handle the redirect
+      } else {
+        console.warn('⚠️ No user in response data')
+        setLoadingBtn(false)
       }
     } catch (err) {
+      console.error('❌ Login exception:', err)
       toast.error('Login failed. Please try again.')
-      console.error('Login error:', err)
-    } finally {
       setLoadingBtn(false)
     }
   }
 
   const handleGoogleLogin = async () => {
     setLoadingBtn(true)
+    console.log('🔐 Initiating Google login...')
     
     try {
+      const origin = typeof window !== 'undefined' ? window.location.origin : ''
+      
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
@@ -94,23 +96,25 @@ export default function LoginPage() {
             access_type: 'offline',
             prompt: 'select_account',
           },
-          redirectTo: `${window.location.origin}/`,
+          redirectTo: `${origin}/`,
         },
       })
       
       if (error) {
+        console.error('❌ Google login error:', error)
         toast.error(error.message)
         setLoadingBtn(false)
       }
     } catch (err) {
+      console.error('❌ Google login exception:', err)
       toast.error('Failed to initiate Google login')
-      console.error('Google login error:', err)
       setLoadingBtn(false)
     }
   }
 
-  // Show loading state while checking auth
+  // Show loading while checking initial auth state
   if (isLoading) {
+    console.log('⏳ Showing loading screen...')
     return (
       <main className="flex justify-center items-center min-h-screen bg-gray-50">
         <div className="bg-white p-8 rounded-xl shadow-md">
@@ -123,6 +127,22 @@ export default function LoginPage() {
     )
   }
 
+  // If user is already logged in, show redirecting message
+  if (user) {
+    console.log('👤 User already logged in, showing redirect screen...')
+    return (
+      <main className="flex justify-center items-center min-h-screen bg-gray-50">
+        <div className="bg-white p-8 rounded-xl shadow-md">
+          <div className="flex items-center gap-3">
+            <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+            <p className="text-gray-600">Redirecting...</p>
+          </div>
+        </div>
+      </main>
+    )
+  }
+
+  console.log('📝 Showing login form...')
   return (
     <main className="flex justify-center items-center min-h-screen bg-gray-50 p-5">
       <div className="bg-white p-8 rounded-xl w-full max-w-md flex flex-col gap-4 shadow-lg">
