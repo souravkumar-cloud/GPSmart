@@ -1,4 +1,4 @@
-import ProductGridView from "@/app/components/ProductGridView";
+import ProductGridView from "@/app/components/Products";
 import { supabase } from "@/lib/supabaseClient";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
