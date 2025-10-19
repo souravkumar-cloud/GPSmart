@@ -45,5 +45,8 @@
     "tailwindcss": "^4",
     "tw-animate-css": "^1.3.7",
     "typescript": "^5"
+  },
+  "npmConfig": {
+    "legacy-peer-deps": true
   }
 }
